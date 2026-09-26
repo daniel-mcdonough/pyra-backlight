@@ -196,10 +196,15 @@ class Popup:
         return False
 
     def on_click(self, win, event):
-        # With the pointer grabbed, a click anywhere else on the screen lands
-        # here with coordinates outside the window. That means "close".
+        # With the pointer grabbed, every click on the screen lands here,
+        # and a click anywhere outside the popup means "close". Compare in
+        # screen coordinates: event.x and event.y are relative to whichever
+        # window was clicked, so a click on the panel icon would otherwise
+        # look like one near the popup's own top-left corner and keep it
+        # open.
+        _, ox, oy = win.get_window().get_origin()
         w, h = win.get_size()
-        if not (0 <= event.x < w and 0 <= event.y < h):
+        if not (ox <= event.x_root < ox + w and oy <= event.y_root < oy + h):
             self.hide()
             return True
         return False
