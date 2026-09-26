@@ -1,0 +1,33 @@
+.TH PYRA-IDLE-DIM 1 "September 2026" "pyra-backlight 0.1" "User Commands"
+.SH NAME
+pyra-idle-dim \- dim the Pyra's screen when the desktop session goes idle
+.SH SYNOPSIS
+.B pyra-idle-dim
+.SH DESCRIPTION
+.B pyra-idle-dim
+watches the session manager's presence status. When the session goes idle
+it lowers the screen backlight, and when the session wakes it puts the
+previous brightness back. If the brightness was changed while the screen
+was dimmed, the newer value is kept and nothing is restored.
+.PP
+It sets the brightness through logind, so it runs as the logged-in user
+and needs no root. It is normally started by the
+.B pyra-idle-dim.service
+systemd user unit, which the package enables for every user.
+.PP
+The idle delay is the session's, set with
+.BR "gsettings set org.mate.session idle-delay " \fIminutes\fR.
+.SH ENVIRONMENT
+.TP
+.B PYRA_DIM_PERCENT
+Percent of the maximum brightness to dim to. Default 20.
+.TP
+.B PYRA_DIM_DEVICE
+The backlight device under /sys/class/backlight. Default
+.BR backlight .
+.PP
+To change either, override the user unit:
+.B systemctl \-\-user edit pyra\-idle\-dim.service
+.SH SEE ALSO
+.BR systemctl (1),
+.BR loginctl (1)
