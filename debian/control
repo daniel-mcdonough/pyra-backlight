@@ -23,7 +23,8 @@ Description: screen and keyboard backlight control for the DragonBox Pyra
  and its idle dimming both adjust the keyboard instead of the screen.
  .
  This package names each device explicitly and sets it through logind, so
- no root is needed:
+ no root is needed. It also handles a kernel that declares the keyboard
+ light as an LED (*::kbd_backlight) instead:
  .
   * pyra-brightness-applet, a MATE panel applet with a slider for the
     screen and one for the keyboard, usable with the arrow keys

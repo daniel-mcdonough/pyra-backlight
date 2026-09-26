@@ -16,6 +16,13 @@ This package names each device explicitly and sets it through logind's
 `SetBrightness`, which lets the logged-in user change their own seat's
 backlights without root.
 
+The usual convention is for a keyboard light to be an LED named
+`*::kbd_backlight`, and a kernel that declares the Pyra's that way leaves only
+the screen in `/sys/class/backlight`. The applet looks for such an LED first
+and falls back to `keyboard-backlight`. The LED has a linear 0–100 scale, so
+the slider steps through the stock kernel's nine levels
+(0 1 2 5 10 20 40 60 100 %) and behaves the same on either kernel.
+
 ## What is in it
 
 **`pyra-brightness-applet`**, a MATE panel applet. Add it with right-click on
@@ -47,7 +54,7 @@ The package is architecture-independent. On a Debian machine,
 
 ## Installing
 
-    sudo apt install ./pyra-backlight_0.1_all.deb
+    sudo apt install ./pyra-backlight_0.2_all.deb
 
 ## License
 

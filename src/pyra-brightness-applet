@@ -50,13 +50,25 @@ APPLET = "PyraBrightnessApplet"
 REFRESH_MS = 500
 
 
+# The keyboard light's brightness-levels on the stock kernel, in percent of
+# full duty. A kernel that declares the light as an LED instead
+# (pyra::kbd_backlight) has a linear 0-100 scale, so the slider steps
+# through these same values there and feels the same on either kernel.
+KBD_PERCENT = (0, 1, 2, 5, 10, 20, 40, 60, 100)
+
+
 class Backlight:
-    def __init__(self, device, label, icon, minimum):
+    """One light, driven in steps. The slider's value is a step index, and
+    steps() maps each index to the raw sysfs value."""
+
+    def __init__(self, subsystem, device, label, icon, minimum, percent=None):
+        self.subsystem = subsystem
         self.device = device
         self.label = label
         self.icon = icon
         self.minimum = minimum
-        self.sys = "/sys/class/backlight/" + device
+        self.percent = percent
+        self.sys = f"/sys/class/{subsystem}/{device}"
 
     def present(self):
         return os.path.isdir(self.sys)
@@ -65,25 +77,36 @@ class Backlight:
         with open(os.path.join(self.sys, name)) as f:
             return int(f.read().strip())
 
-    def maximum(self):
-        return self._read("max_brightness")
+    def steps(self):
+        top = self._read("max_brightness")
+        if self.percent is None:
+            return list(range(top + 1))
+        return sorted({round(p * top / 100) for p in self.percent})
+
+    def last(self):
+        return len(self.steps()) - 1
 
     def get(self):
         # The requested value, not actual_brightness: this is what logind
-        # writes, so it is what the slider should agree with.
-        return self._read("brightness")
+        # writes, so it is what the slider should agree with. A raw value
+        # between two steps, set by something else, shows as the nearest.
+        raw = self._read("brightness")
+        steps = self.steps()
+        return min(range(len(steps)), key=lambda i: abs(steps[i] - raw))
 
-    def set(self, bus, value):
-        value = max(self.minimum, min(self.maximum(), int(value)))
+    def set(self, bus, step):
+        steps = self.steps()
+        step = max(self.minimum, min(len(steps) - 1, int(step)))
         # logind lets the session owner set the brightness of its own seat's
-        # devices. Writing the sysfs file directly would need root. Async,
-        # so dragging a slider never waits on the system bus.
+        # devices, backlights and LEDs alike. Writing the sysfs file directly
+        # would need root. Async, so dragging a slider never waits on the
+        # system bus.
         bus.call(
             "org.freedesktop.login1",
             "/org/freedesktop/login1/session/auto",
             "org.freedesktop.login1.Session",
             "SetBrightness",
-            GLib.Variant("(ssu)", ("backlight", self.device, value)),
+            GLib.Variant("(ssu)", (self.subsystem, self.device, steps[step])),
             None, Gio.DBusCallFlags.NONE, 5000, None, self._done, None,
         )
 
@@ -94,9 +117,25 @@ class Backlight:
             print(f"{self.device}: SetBrightness failed: {e.message}", flush=True)
 
 
-SCREEN = Backlight("backlight", "Screen", "display-brightness-symbolic", 1)
-KEYBOARD = Backlight("keyboard-backlight", "Keyboard",
+def find_keyboard():
+    # An LED named *::kbd_backlight is the usual convention, and what a
+    # kernel with the Pyra's keyboard light declared as an LED provides.
+    # The stock kernel has it as a second backlight instead.
+    try:
+        leds = sorted(n for n in os.listdir("/sys/class/leds")
+                      if n.endswith("::kbd_backlight"))
+    except OSError:
+        leds = []
+    if leds:
+        return Backlight("leds", leds[0], "Keyboard",
+                         "keyboard-brightness-symbolic", 0, KBD_PERCENT)
+    return Backlight("backlight", "keyboard-backlight", "Keyboard",
                      "keyboard-brightness-symbolic", 0)
+
+
+SCREEN = Backlight("backlight", "backlight", "Screen",
+                   "display-brightness-symbolic", 1)
+KEYBOARD = find_keyboard()
 
 
 class Popup:
@@ -125,7 +164,7 @@ class Popup:
             icon = Gtk.Image.new_from_icon_name(light.icon, Gtk.IconSize.MENU)
             name = Gtk.Label(label=light.label, xalign=0)
             adj = Gtk.Adjustment(value=light.minimum, lower=light.minimum,
-                                 upper=light.maximum(), step_increment=1,
+                                 upper=light.last(), step_increment=1,
                                  page_increment=1)
             scale = Gtk.Scale(orientation=Gtk.Orientation.HORIZONTAL,
                               adjustment=adj, digits=0, hexpand=True,
@@ -140,7 +179,7 @@ class Popup:
                               lambda b, v: str(int(v)))
             scale.set_can_focus(True)
             scale.connect("value-changed", self.on_changed, light)
-            # Snap drags to whole steps; there are only sixteen of them.
+            # Snap drags to whole steps; there are only nine to sixteen.
             scale.connect("change-value", self.on_snap)
             grid.attach(icon, 0, row, 1, 1)
             grid.attach(name, 1, row, 1, 1)
@@ -314,7 +353,7 @@ def build(applet, iid, data):
         lines = []
         for l in lights:
             try:
-                lines.append(f"{l.label}: {l.get()} of {l.maximum()}")
+                lines.append(f"{l.label}: {l.get()} of {l.last()}")
             except OSError:
                 lines.append(f"{l.label}: unreadable")
         tooltip.set_text("\n".join(lines))

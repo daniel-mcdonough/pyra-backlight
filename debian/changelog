@@ -1,3 +1,11 @@
+pyra-backlight (0.2) trixie; urgency=medium
+
+  * Applet: drive the keyboard light as an LED (*::kbd_backlight) when the
+    kernel declares it that way, in the same nine steps as the stock
+    kernel's backlight. The stock kernel's path still works.
+
+ -- pyra-backlight maintainers <pyra-backlight@example.invalid>  Sat, 26 Sep 2026 14:00:00 +0000
+
 pyra-backlight (0.1) trixie; urgency=medium
 
   * Initial release: pyra-brightness-applet and pyra-idle-dim.
