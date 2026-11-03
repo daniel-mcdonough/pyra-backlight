@@ -1,32 +1,59 @@
 # pyra-backlight
 
-Screen and keyboard backlight control for the DragonBox Pyra under MATE.
+Screen and keyboard brightness control for the DragonBox Pyra under MATE: a
+panel applet with a slider for each, and a small service that dims the screen
+when you walk away.
 
-## Why
+![The applet's popup with the screen and keyboard sliders](applet.png)
 
-The Pyra has two devices in `/sys/class/backlight`: `backlight`, the screen,
-and `keyboard-backlight`. MATE's backlight helper recognises neither name and
+## The problem
+
+On the stock Pyra image there is no working brightness control in MATE. The
+Pyra has two devices in `/sys/class/backlight`: `backlight`, the screen, and
+`keyboard-backlight`. MATE's backlight helper recognises neither name and
 falls back to the first entry it finds, which is the keyboard. So MATE's
 brightness applet and its idle dimming both change the keyboard light, and
-the screen never changes. The stock Pyra image works around this by turning
-MATE's backlight control off (`backlight-enable=false` in
-`pyra-config-desktop`), which leaves no brightness control at all.
+the screen never changes. The image works around this by turning MATE's
+backlight control off (`backlight-enable=false` in `pyra-config-desktop`),
+which leaves you with no brightness control at all.
 
 This package names each device explicitly and sets it through logind's
 `SetBrightness`, which lets the logged-in user change their own seat's
-backlights without root.
+backlights without root. No udev rules, no sudo, no setuid helpers.
 
-The usual convention is for a keyboard light to be an LED named
-`*::kbd_backlight`, and a kernel that declares the Pyra's that way leaves only
-the screen in `/sys/class/backlight`. The applet looks for such an LED first
-and falls back to `keyboard-backlight`. The LED has a linear 0–100 scale, so
-the slider steps through the stock kernel's nine levels
-(0 1 2 5 10 20 40 60 100 %) and behaves the same on either kernel.
+## Requirements
 
-## What is in it
+- A DragonBox Pyra running the Debian-based image with the MATE desktop
+- The package is built against Debian trixie
 
-**`pyra-brightness-applet`**, a MATE panel applet. Add it with right-click on
-the panel, *Add to Panel…*, *Pyra Brightness*.
+Dependencies (`python3-gi`, the GTK and MATE panel introspection bindings,
+systemd) are pulled in by apt.
+
+## Installing
+
+Download `pyra-backlight_<version>_all.deb` from the Releases page. It is
+architecture-independent, so there is only one file per release.
+
+Install it with apt rather than `dpkg -i`, so the dependencies come along:
+
+    sudo apt install ./pyra-backlight_<version>_all.deb
+
+The `./` matters; without it apt looks for a package by that name in the
+archive and fails.
+
+Then:
+
+1. Right-click the panel, *Add to Panel…*, and pick *Pyra Brightness*.
+2. Log out and back in to start the idle dimmer. It is enabled for every user
+   on install, but only starts with a new session.
+
+To upgrade, install the newer `.deb` the same way. To remove it:
+
+    sudo apt remove pyra-backlight
+
+## Using the applet
+
+Click the panel icon to open the sliders.
 
 | Input | Does |
 | --- | --- |
@@ -37,24 +64,92 @@ the panel, *Add to Panel…*, *Pyra Brightness*.
 | Scroll on the icon | Screen brightness |
 | Shift + scroll on the icon | Keyboard brightness |
 
-The screen slider stops at 1 so the screen cannot be turned fully dark from
-it. The applet does no work while the popup is closed.
+The screen slider stops at 1, not 0, so you cannot black out the screen from
+it and then have to find the slider again in the dark. The applet does no work
+while the popup is closed.
 
-**`pyra-idle-dim`**, a systemd user service that dims the screen when the
-session goes idle and restores it on wake. It is enabled for every user on
-install and starts at the next login. See `man pyra-idle-dim` for settings.
+## Idle dimming
 
-## Building
+`pyra-idle-dim` runs as a systemd user service. When the session goes idle it
+drops the screen to 20% of maximum, and when you come back it restores the
+previous level. If you changed the brightness while it was dimmed, your newer
+value is kept and nothing is restored.
+
+The idle delay is MATE's session setting, not something in this package. Set
+it in *Control Center → Screensaver*, or:
+
+    gsettings set org.mate.session idle-delay 5
+
+(in minutes).
+
+To change the dim level, override the user unit:
+
+    systemctl --user edit pyra-idle-dim.service
+
+and add:
+
+    [Service]
+    Environment=PYRA_DIM_PERCENT=10
+
+`PYRA_DIM_DEVICE` selects a different device under `/sys/class/backlight` if
+you need it. The default is `backlight`. See `man pyra-idle-dim` for the
+details.
+
+To turn idle dimming off for your user:
+
+    systemctl --user mask --now pyra-idle-dim.service
+
+`disable` does not work here, because the package enables the unit globally
+and a per-user `disable` cannot remove that.
+
+## How it works
+
+Both tools call `SetBrightness` on the current logind session over D-Bus.
+logind allows the session owner to change backlights and LEDs on their own
+seat, which is why nothing needs root.
+
+The usual convention is for a keyboard light to be an LED named
+`*::kbd_backlight`, and a kernel that declares the Pyra's that way leaves only
+the screen in `/sys/class/backlight`. The applet looks for such an LED first
+and falls back to `keyboard-backlight`. The LED has a linear 0–100 scale, so
+the slider steps through the stock kernel's nine levels
+(0 1 2 5 10 20 40 60 100 %) and behaves the same on either kernel.
+
+The idle signal comes from the MATE session manager's presence status, so
+anything that counts as activity to the screensaver also wakes the screen.
+
+## Notes and gotchas
+
+- Leave MATE's own backlight control off (`backlight-enable=false`, the image
+  default). If it is on, MATE's power manager goes back to dimming the
+  keyboard on idle, alongside this package dimming the screen.
+- The keyboard slider only appears if a keyboard light is found, either the
+  `*::kbd_backlight` LED or the `keyboard-backlight` device.
+
+## Troubleshooting
+
+**The screen does not dim when idle.** Check that the service is running:
+
+    systemctl --user status pyra-idle-dim.service
+    journalctl --user -u pyra-idle-dim.service
+
+If it shows as inactive right after installing, you have not logged out and
+back in yet.
+
+**A slider moves but the light does not change.** The applet prints
+`SetBrightness failed` with logind's error when a call is refused. Look for it
+with `journalctl --user | grep SetBrightness`, or in `~/.xsession-errors`,
+depending on how your session captures D-Bus-activated programs. The usual
+cause is running outside a proper logind session, such as from an SSH login
+or a session started without `pam_systemd`.
+
+## Building from source
 
     ./build-deb.sh
 
-builds `dist/pyra-backlight_<version>_all.deb` in a Debian trixie container.
-The package is architecture-independent. On a Debian machine,
-`dpkg-buildpackage -b -uc -us` also works.
-
-## Installing
-
-    sudo apt install ./pyra-backlight_0.2_all.deb
+builds `dist/pyra-backlight_<version>_all.deb` in a Debian trixie container,
+so it needs Docker. On a Debian machine, `dpkg-buildpackage -b -uc -us` also
+works.
 
 ## License
 
