@@ -1,6 +1,6 @@
-.TH PYRA-IDLE-DIM 1 "September 2026" "pyra-backlight 0.2" "User Commands"
+.TH PYRA-IDLE-DIM 1 "November 2026" "pyra-backlight 0.3" "User Commands"
 .SH NAME
-pyra-idle-dim \- dim the Pyra's screen when the desktop session goes idle
+pyra-idle-dim \- dim the Pyra's screen and keyboard light when the desktop session goes idle
 .SH SYNOPSIS
 .B pyra-idle-dim
 .SH DESCRIPTION
@@ -10,6 +10,13 @@ it lowers the screen backlight, and when the session wakes it puts the
 previous brightness back. If the brightness was changed while the screen
 was dimmed, the newer value is kept and nothing is restored.
 .PP
+The keyboard light, if it is an LED named
+.IR *::kbd_backlight ,
+goes off when the session goes idle and comes back on when it wakes, unless
+it was changed in the meantime. At start, once mate-power-manager is on the
+session bus (it sets the light to 100% at login on AC), the light is set to
+the level at login from the configuration file.
+.PP
 It sets the brightness through logind, so it runs as the logged-in user
 and needs no root. It is normally started by the
 .B pyra-idle-dim.service
@@ -17,6 +24,27 @@ systemd user unit, which the package enables for every user.
 .PP
 The idle delay is the session's, set with
 .BR "gsettings set org.mate.session idle-delay " \fIminutes\fR.
+.SH FILES
+.TP
+.I ~/.config/pyra-backlight.conf
+INI file. In the
+.B [keyboard]
+section,
+.B level
+is
+.B last
+(the default) or a percentage from 0 to 100: the keyboard light's level at
+login.
+.B last
+is the level it had at the last idle or logout, or 5% if none is kept yet.
+A missing file or key means the default; a bad value is logged and ignored.
+Reread on SIGHUP, so after editing it run
+.BR "systemctl \-\-user reload pyra\-idle\-dim" .
+.TP
+.I ~/.local/state/pyra-backlight/kbd-level
+The kept keyboard level (under
+.B $XDG_STATE_HOME
+if set).
 .SH ENVIRONMENT
 .TP
 .B PYRA_DIM_PERCENT

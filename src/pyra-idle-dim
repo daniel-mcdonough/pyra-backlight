@@ -1,7 +1,9 @@
 #!/usr/bin/python3
 #
 # pyra-idle-dim — dim the screen backlight when the session goes idle, and put
-# it back when it wakes. Runs as the logged-in user, needs no root.
+# it back when it wakes. Also turns the keyboard light off when idle, and puts
+# the keyboard light's level back at login. Runs as the logged-in user, needs
+# no root.
 #
 # WHY THIS EXISTS
 #
@@ -20,11 +22,30 @@
 # The idle signal comes from the session manager, so the delay is whatever
 # org.mate.session idle-delay is set to. Set that, not anything here.
 #
+# THE KEYBOARD LIGHT
+#
+# At login on AC, mate-power-manager sets the keyboard light to 100%, whatever
+# it was. So this waits for mate-power-manager to appear on the session bus
+# and then sets the level from ~/.config/pyra-backlight.conf:
+#
+#   [keyboard]
+#   level = last        # or a percentage, 0-100
+#
+# "last" is the level the light had at the last idle or logout, kept in
+# $XDG_STATE_HOME/pyra-backlight/kbd-level. With nothing kept yet it is 5%.
+# Only a keyboard light that is an LED (*::kbd_backlight) is handled; without
+# one this does the screen only. The file is reread on SIGHUP
+# (systemctl --user reload pyra-idle-dim). The session restarts this at each
+# login (/etc/xdg/autostart/pyra-idle-dim.desktop).
+#
 # Copyright (C) 2026 the pyra-backlight authors
 # SPDX-License-Identifier: GPL-2.0-or-later
 #
+import configparser
 import os
+import signal
 import sys
+import time
 
 import gi
 gi.require_version("GLib", "2.0")
@@ -36,6 +57,21 @@ DIM_PERCENT = int(os.environ.get("PYRA_DIM_PERCENT", "20"))
 
 SYS = "/sys/class/backlight/" + DEVICE
 STATUS_IDLE = 3
+
+LEDS = "/sys/class/leds"
+CONFIG = os.path.join(
+    os.environ.get("XDG_CONFIG_HOME") or os.path.expanduser("~/.config"),
+    "pyra-backlight.conf")
+KBD_STATE = os.path.join(
+    os.environ.get("XDG_STATE_HOME") or os.path.expanduser("~/.local/state"),
+    "pyra-backlight", "kbd-level")
+# The keyboard level for "last" when no level has been kept yet.
+KBD_FIRST_LEVEL = 5
+# mate-power-manager's bus name. It does its keyboard reset at start, so the
+# level is put back once this name is on the bus.
+POWER_MANAGER = "org.mate.PowerManager"
+# How long to wait for it before putting the level back anyway.
+POWER_MANAGER_TIMEOUT = 30
 
 saved = None
 # What we dimmed to, so that waking can tell whether anyone changed the
@@ -52,7 +88,7 @@ def read(name):
         return int(f.read().strip())
 
 
-def set_brightness(system_bus, value):
+def set_brightness(system_bus, value, subsystem="backlight", device=DEVICE):
     # logind lets the session owner set the brightness of its own seat's
     # devices. Writing the sysfs file directly would need root.
     system_bus.call_sync(
@@ -60,14 +96,149 @@ def set_brightness(system_bus, value):
         "/org/freedesktop/login1/session/auto",
         "org.freedesktop.login1.Session",
         "SetBrightness",
-        GLib.Variant("(ssu)", ("backlight", DEVICE, value)),
+        GLib.Variant("(ssu)", (subsystem, device, value)),
         None, Gio.DBusCallFlags.NONE, 5000, None,
     )
 
 
-def on_status(bus, sender, path, iface, signal, params, system_bus):
-    global saved, dimmed_to
+def find_keyboard():
+    # The same lookup as the applet's, minus its fallback: the stock kernel's
+    # keyboard-backlight device is left alone.
+    try:
+        leds = sorted(n for n in os.listdir(LEDS)
+                      if n.endswith("::kbd_backlight"))
+    except OSError:
+        return None
+    return leds[0] if leds else None
+
+
+def read_config():
+    """The [keyboard] level from the config file: "last" or 0-100."""
+    parser = configparser.ConfigParser(interpolation=None)
+    try:
+        parser.read(CONFIG)
+    except configparser.Error as e:
+        log(f"{CONFIG}: {e}; using the defaults")
+        return "last"
+    value = parser.get("keyboard", "level", fallback="last").strip().lower()
+    if value == "last":
+        return value
+    try:
+        level = int(value)
+    except ValueError:
+        level = -1
+    if not 0 <= level <= 100:
+        log(f"{CONFIG}: [keyboard] level = {value} is not 'last' or 0-100; "
+            "using 'last'")
+        return "last"
+    return level
+
+
+class Keyboard:
+    def __init__(self, system_bus, name):
+        self.system_bus = system_bus
+        self.name = name
+        self.path = os.path.join(LEDS, name, "brightness")
+        self.level = read_config()
+        # The level before the light went off for idle, or None when it is
+        # not off for idle.
+        self.saved = None
+        # Until the level at login is set, the light may be at MATE's 100%,
+        # which is not a level to keep.
+        self.logged_in = False
+
+    def read(self):
+        with open(self.path) as f:
+            return int(f.read().strip())
+
+    def set(self, value):
+        try:
+            set_brightness(self.system_bus, value, "leds", self.name)
+        except GLib.Error as e:
+            log(f"keyboard: SetBrightness({value}) failed: {e.message}")
+
+    def reload(self):
+        self.level = read_config()
+        log(f"reloaded {CONFIG}: keyboard level {self.level}")
+
+    def kept(self):
+        try:
+            with open(KBD_STATE) as f:
+                level = int(f.read().strip())
+        except (OSError, ValueError):
+            return None
+        return level if 0 <= level <= 100 else None
+
+    def keep(self, level):
+        try:
+            os.makedirs(os.path.dirname(KBD_STATE), exist_ok=True)
+            tmp = KBD_STATE + ".tmp"
+            with open(tmp, "w") as f:
+                f.write(f"{level}\n")
+            os.replace(tmp, KBD_STATE)
+        except OSError as e:
+            log(f"keyboard: cannot keep the level in {KBD_STATE}: {e}")
+
+    def login(self, how):
+        if self.level == "last":
+            target = self.kept()
+            if target is None:
+                target = KBD_FIRST_LEVEL
+        else:
+            target = self.level
+        log(f"login ({how}): keyboard {self.read()} -> {target}")
+        self.set(target)
+        self.logged_in = True
+        # Says whether something reset the light after us, which would mean
+        # the trigger above is too early.
+        GLib.timeout_add_seconds(10, self.check, target)
+
+    def check(self, target):
+        now = self.read()
+        if now != target:
+            log(f"login: keyboard is {now} 10 s after setting {target}")
+        return GLib.SOURCE_REMOVE
+
+    def idle(self):
+        if self.saved is not None:
+            return
+        now = self.read()
+        if now == 0:
+            return
+        log(f"idle: keyboard {now} -> 0")
+        self.keep(now)
+        self.saved = now
+        self.set(0)
+
+    def awake(self):
+        if self.saved is None:
+            return
+        now = self.read()
+        if now != 0:
+            log(f"awake: keyboard is {now}, not 0; leaving it")
+        else:
+            log(f"awake: keyboard restoring {self.saved}")
+            self.set(self.saved)
+        self.saved = None
+
+    def stop(self):
+        if self.logged_in:
+            self.keep(self.saved if self.saved is not None else self.read())
+
+
+def on_status(bus, sender, path, iface, sig, params, data):
+    system_bus, keyboard = data
     status = params[0]
+    if keyboard:
+        if status == STATUS_IDLE:
+            keyboard.idle()
+        else:
+            keyboard.awake()
+    dim_screen(system_bus, status)
+
+
+def dim_screen(system_bus, status):
+    global saved, dimmed_to
     if status == STATUS_IDLE:
         if saved is not None:
             return
@@ -95,6 +266,34 @@ def on_status(bus, sender, path, iface, signal, params, system_bus):
         dimmed_to = None
 
 
+def watch_login(session_bus, keyboard):
+    start = time.monotonic()
+    done = False
+    watch = None
+
+    def apply(how):
+        nonlocal done
+        if done:
+            return
+        done = True
+        Gio.bus_unwatch_name(watch)
+        keyboard.login(f"{how} after {time.monotonic() - start:.1f} s")
+
+    def appeared(conn, name, owner):
+        apply(f"{POWER_MANAGER} appeared")
+
+    def timeout():
+        if not done:
+            log(f"no {POWER_MANAGER} on the session bus")
+            apply("timeout")
+        return GLib.SOURCE_REMOVE
+
+    watch = Gio.bus_watch_name_on_connection(
+        session_bus, POWER_MANAGER, Gio.BusNameWatcherFlags.NONE,
+        appeared, None)
+    GLib.timeout_add_seconds(POWER_MANAGER_TIMEOUT, timeout)
+
+
 def main():
     if not os.path.isdir(SYS):
         sys.exit(f"no backlight device at {SYS}")
@@ -106,13 +305,38 @@ def main():
     # setup fails at start rather than silently doing nothing hours later.
     set_brightness(system_bus, read("actual_brightness"))
 
+    name = find_keyboard()
+    keyboard = Keyboard(system_bus, name) if name else None
+
+    loop = GLib.MainLoop()
+
+    def stop():
+        if keyboard:
+            keyboard.stop()
+        loop.quit()
+        return GLib.SOURCE_REMOVE
+
+    def reload():
+        if keyboard:
+            keyboard.reload()
+        return GLib.SOURCE_CONTINUE
+
+    GLib.unix_signal_add(GLib.PRIORITY_DEFAULT, signal.SIGTERM, stop)
+    GLib.unix_signal_add(GLib.PRIORITY_DEFAULT, signal.SIGINT, stop)
+    GLib.unix_signal_add(GLib.PRIORITY_DEFAULT, signal.SIGHUP, reload)
+
     session_bus.signal_subscribe(
         None, "org.gnome.SessionManager.Presence", "StatusChanged",
         "/org/gnome/SessionManager/Presence", None,
-        Gio.DBusSignalFlags.NONE, on_status, system_bus,
+        Gio.DBusSignalFlags.NONE, on_status, (system_bus, keyboard),
     )
+    if keyboard:
+        watch_login(session_bus, keyboard)
+        log(f"keyboard {name}: level at login {keyboard.level}, off when idle")
+    else:
+        log("no keyboard LED; screen only")
     log(f"watching for idle; {DEVICE} dims to {DIM_PERCENT}% of maximum")
-    GLib.MainLoop().run()
+    loop.run()
 
 
 if __name__ == "__main__":

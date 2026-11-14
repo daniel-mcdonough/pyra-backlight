@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Pyra idle dimmer
+Comment=Restart pyra-idle-dim at each login, which sets the keyboard light's level
+# The user unit only starts with the systemd user manager, which outlives a
+# logout while any other session (ssh) is open, and MATE never reaches
+# graphical-session.target. So the session starts it.
+Exec=systemctl --user restart pyra-idle-dim.service
+OnlyShowIn=MATE;
+NoDisplay=true

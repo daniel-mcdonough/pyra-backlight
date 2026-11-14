@@ -75,6 +75,20 @@ drops the screen to 20% of maximum, and when you come back it restores the
 previous level. If you changed the brightness while it was dimmed, your newer
 value is kept and nothing is restored.
 
+The keyboard light goes off when the session goes idle and comes back on with
+the session, again only if you did not change it meanwhile. At login it is set
+to the level in `~/.config/pyra-backlight.conf`, after MATE's power manager has
+set it to 100% (which it does on AC):
+
+    [keyboard]
+    level = last
+
+`last` (the default) is the level the light had at your last idle or logout,
+or 5% the first time. A number from 0 to 100 sets that level at every login.
+After editing the file run `systemctl --user reload pyra-idle-dim`. The
+keyboard part needs the light to be an LED (`*::kbd_backlight`); on a kernel
+without one, only the screen is handled.
+
 The idle delay is MATE's session setting, not something in this package. Set
 it in *Control Center → Screensaver*, or:
 
@@ -123,6 +137,9 @@ anything that counts as activity to the screensaver also wakes the screen.
 - Leave MATE's own backlight control off (`backlight-enable=false`, the image
   default). If it is on, MATE's power manager goes back to dimming the
   keyboard on idle, alongside this package dimming the screen.
+- Leave MATE's "Reduce keyboard backlight brightness" (battery) and "Dim
+  display when idle" (AC) unticked. Either one hands the keyboard light back
+  to MATE, which then fights `pyra-idle-dim` over it.
 - The keyboard slider only appears if a keyboard light is found, either the
   `*::kbd_backlight` LED or the `keyboard-backlight` device.
 
@@ -134,7 +151,8 @@ anything that counts as activity to the screensaver also wakes the screen.
     journalctl --user -u pyra-idle-dim.service
 
 If it shows as inactive right after installing, you have not logged out and
-back in yet.
+back in yet. The session restarts it at each login, from
+`/etc/xdg/autostart/pyra-idle-dim.desktop`.
 
 **A slider moves but the light does not change.** The applet prints
 `SetBrightness failed` with logind's error when a call is refused. Look for it

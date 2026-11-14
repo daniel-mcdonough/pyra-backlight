@@ -1,5 +1,5 @@
 [Unit]
-Description=Dim the screen backlight when the session goes idle
+Description=Dim the screen and turn the keyboard light off when the session goes idle
 Documentation=file:/usr/bin/pyra-idle-dim
 PartOf=graphical-session.target
 After=graphical-session.target
@@ -7,6 +7,8 @@ After=graphical-session.target
 [Service]
 Type=simple
 ExecStart=/usr/bin/pyra-idle-dim
+# Rereads ~/.config/pyra-backlight.conf.
+ExecReload=kill -HUP $MAINPID
 Restart=on-failure
 RestartSec=5
 # Percent of maximum brightness to drop to when idle.

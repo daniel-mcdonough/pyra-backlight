@@ -1,3 +1,20 @@
+pyra-backlight (0.3) trixie; urgency=medium
+
+  * pyra-idle-dim: turn the keyboard light (*::kbd_backlight LED) off when
+    the session goes idle and back on when it wakes, unless it was changed
+    meanwhile.
+  * pyra-idle-dim: set the keyboard light's level at login, after
+    mate-power-manager's reset, from ~/.config/pyra-backlight.conf
+    ([keyboard] level = last or 0-100). "last" is kept in
+    ~/.local/state/pyra-backlight/kbd-level.
+  * pyra-idle-dim.service: ExecReload rereads the config file (SIGHUP).
+  * Restart pyra-idle-dim at each MATE login from /etc/xdg/autostart. The
+    user unit alone started only with the systemd user manager, so after a
+    logout and login with the manager still up (an ssh session open) idle
+    dimming was not running.
+
+ -- pyra-backlight maintainers <pyra-backlight@example.invalid>  Sat, 14 Nov 2026 12:00:00 +0000
+
 pyra-backlight (0.2) trixie; urgency=medium
 
   * Applet: drive the keyboard light as an LED (*::kbd_backlight) when the
