@@ -12,6 +12,8 @@ pyra-backlight (0.3) trixie; urgency=medium
     user unit alone started only with the systemd user manager, so after a
     logout and login with the manager still up (an ssh session open) idle
     dimming was not running.
+  * postinst: reload running systemd user managers, which otherwise keep
+    the old user unit until reboot.
 
  -- pyra-backlight maintainers <pyra-backlight@example.invalid>  Sat, 14 Nov 2026 12:00:00 +0000
 
