@@ -11,8 +11,6 @@ ExecStart=/usr/bin/pyra-idle-dim
 ExecReload=kill -HUP $MAINPID
 Restart=on-failure
 RestartSec=5
-# Percent of maximum brightness to drop to when idle.
-Environment=PYRA_DIM_PERCENT=20
 
 [Install]
 WantedBy=default.target

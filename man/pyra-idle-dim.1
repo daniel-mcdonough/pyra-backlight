@@ -1,4 +1,4 @@
-.TH PYRA-IDLE-DIM 1 "November 2026" "pyra-backlight 0.3" "User Commands"
+.TH PYRA-IDLE-DIM 1 "November 2026" "pyra-backlight 0.4" "User Commands"
 .SH NAME
 pyra-idle-dim \- dim the Pyra's screen and keyboard light when the desktop session goes idle
 .SH SYNOPSIS
@@ -6,7 +6,7 @@ pyra-idle-dim \- dim the Pyra's screen and keyboard light when the desktop sessi
 .SH DESCRIPTION
 .B pyra-idle-dim
 watches the session manager's presence status. When the session goes idle
-it lowers the screen backlight, and when the session wakes it puts the
+it lowers the screen backlight (to 20% of maximum by default), and when the session wakes it puts the
 previous brightness back. If the brightness was changed while the screen
 was dimmed, the newer value is kept and nothing is restored.
 .PP
@@ -24,6 +24,8 @@ systemd user unit, which the package enables for every user.
 .PP
 The idle delay is the session's, set with
 .BR "gsettings set org.mate.session idle-delay " \fIminutes\fR.
+The same delay starts the screensaver and mate-power-manager's idle sleep
+timer.
 .SH FILES
 .TP
 .I ~/.config/pyra-backlight.conf
@@ -37,6 +39,16 @@ is
 login.
 .B last
 is the level it had at the last idle or logout, or 5% if none is kept yet.
+In the
+.B [screen]
+section,
+.B dim
+is the percentage of the maximum brightness to dim to, 1 to 100, or
+.B off
+for no screen dimming; it never goes below 1, the lowest lit step.
+Without it,
+.B PYRA_DIM_PERCENT
+is used, then 20.
 A missing file or key means the default; a bad value is logged and ignored.
 Reread on SIGHUP, so after editing it run
 .BR "systemctl \-\-user reload pyra\-idle\-dim" .
@@ -48,7 +60,11 @@ if set).
 .SH ENVIRONMENT
 .TP
 .B PYRA_DIM_PERCENT
-Percent of the maximum brightness to dim to. Default 20.
+Percent of the maximum brightness to dim to (1 to 100, or
+.BR off ),
+used when the configuration file has no
+.B [screen] dim
+key. Kept for setups made before 0.4; the unit no longer sets it.
 .TP
 .B PYRA_DIM_DEVICE
 The backlight device under /sys/class/backlight. Default

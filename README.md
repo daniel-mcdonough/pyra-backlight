@@ -71,20 +71,31 @@ while the popup is closed.
 ## Idle dimming
 
 `pyra-idle-dim` runs as a systemd user service. When the session goes idle it
-drops the screen to 20% of maximum, and when you come back it restores the
-previous level. If you changed the brightness while it was dimmed, your newer
+drops the screen to 20% of maximum (or the depth set below), and when you come
+back it restores the previous level. If you changed the brightness while it was dimmed, your newer
 value is kept and nothing is restored.
 
 The keyboard light goes off when the session goes idle and comes back on with
 the session, again only if you did not change it meanwhile. At login it is set
-to the level in `~/.config/pyra-backlight.conf`, after MATE's power manager has
-set it to 100% (which it does on AC):
+to its level from `~/.config/pyra-backlight.conf`, after MATE's power manager
+has set it to 100% (which it does on AC). The file also sets how far the
+screen dims:
 
     [keyboard]
     level = last
 
+    [screen]
+    dim = 20
+
 `last` (the default) is the level the light had at your last idle or logout,
 or 5% the first time. A number from 0 to 100 sets that level at every login.
+
+`dim` is the percentage of maximum the screen drops to, from 1 to 100, or
+`off` for no screen dimming (the keyboard light is still handled). It never
+goes below the lowest step that still lights the panel. Without the key, the
+`PYRA_DIM_PERCENT` environment variable is used if set (how 0.3 and earlier
+were configured), then 20.
+
 After editing the file run `systemctl --user reload pyra-idle-dim`. The
 keyboard part needs the light to be an LED (`*::kbd_backlight`); on a kernel
 without one, only the screen is handled.
@@ -94,22 +105,14 @@ it in *Control Center → Screensaver*, or:
 
     gsettings set org.mate.session idle-delay 5
 
-(in minutes).
+(in minutes). The same delay starts the screensaver and MATE's idle sleep timer.
 
-To change the dim level, override the user unit:
-
-    systemctl --user edit pyra-idle-dim.service
-
-and add:
-
-    [Service]
-    Environment=PYRA_DIM_PERCENT=10
-
-`PYRA_DIM_DEVICE` selects a different device under `/sys/class/backlight` if
+`PYRA_DIM_DEVICE` (set with `systemctl --user edit pyra-idle-dim.service`)
+selects a different device under `/sys/class/backlight` if
 you need it. The default is `backlight`. See `man pyra-idle-dim` for the
 details.
 
-To turn idle dimming off for your user:
+To turn off both the screen and the keyboard handling for your user:
 
     systemctl --user mask --now pyra-idle-dim.service
 

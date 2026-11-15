@@ -22,6 +22,14 @@
 # The idle signal comes from the session manager, so the delay is whatever
 # org.mate.session idle-delay is set to. Set that, not anything here.
 #
+# How far the screen dims is set in ~/.config/pyra-backlight.conf:
+#
+#   [screen]
+#   dim = 20            # percent of maximum, 1-100, or off
+#
+# It never dims below the lowest step that still lights the panel (1).
+# Without the key, PYRA_DIM_PERCENT from the environment is used, then 20.
+#
 # THE KEYBOARD LIGHT
 #
 # At login on AC, mate-power-manager sets the keyboard light to 100%, whatever
@@ -52,8 +60,9 @@ gi.require_version("GLib", "2.0")
 from gi.repository import Gio, GLib
 
 DEVICE = os.environ.get("PYRA_DIM_DEVICE", "backlight")
-# Percent of maximum to drop to when idle.
-DIM_PERCENT = int(os.environ.get("PYRA_DIM_PERCENT", "20"))
+# Percent of maximum to drop to when idle, when neither the config file nor
+# PYRA_DIM_PERCENT sets it.
+DIM_DEFAULT = 20
 
 SYS = "/sys/class/backlight/" + DEVICE
 STATUS_IDLE = 3
@@ -74,6 +83,8 @@ POWER_MANAGER = "org.mate.PowerManager"
 POWER_MANAGER_TIMEOUT = 30
 
 saved = None
+# Percent of maximum to drop to when idle, or None for no screen dimming.
+dim_percent = DIM_DEFAULT
 # What we dimmed to, so that waking can tell whether anyone changed the
 # brightness in the meantime, from the panel applet or anywhere else.
 dimmed_to = None
@@ -112,14 +123,50 @@ def find_keyboard():
     return leds[0] if leds else None
 
 
+def parse_dim(value):
+    """A screen dim depth: 1-100, or None for "off". ValueError otherwise."""
+    value = value.strip().lower()
+    if value == "off":
+        return None
+    try:
+        percent = int(value)
+    except ValueError:
+        percent = 0
+    if not 1 <= percent <= 100:
+        raise ValueError(value)
+    return percent
+
+
+def describe_dim(percent):
+    return "off" if percent is None else f"{percent}%"
+
+
+def env_dim():
+    """The dim depth from PYRA_DIM_PERCENT, or the default."""
+    value = os.environ.get("PYRA_DIM_PERCENT")
+    if value is None:
+        return DIM_DEFAULT
+    try:
+        return parse_dim(value)
+    except ValueError:
+        log(f"PYRA_DIM_PERCENT={value} is not 1-100 or off; "
+            f"using {DIM_DEFAULT}%")
+        return DIM_DEFAULT
+
+
 def read_config():
-    """The [keyboard] level from the config file: "last" or 0-100."""
+    """The [keyboard] level ("last" or 0-100) and the [screen] dim depth
+    (1-100, or None for off) from the config file."""
     parser = configparser.ConfigParser(interpolation=None)
     try:
         parser.read(CONFIG)
     except configparser.Error as e:
         log(f"{CONFIG}: {e}; using the defaults")
-        return "last"
+        return "last", env_dim()
+    return keyboard_level(parser), screen_dim(parser)
+
+
+def keyboard_level(parser):
     value = parser.get("keyboard", "level", fallback="last").strip().lower()
     if value == "last":
         return value
@@ -134,12 +181,25 @@ def read_config():
     return level
 
 
+def screen_dim(parser):
+    value = parser.get("screen", "dim", fallback=None)
+    if value is None:
+        return env_dim()
+    try:
+        return parse_dim(value)
+    except ValueError:
+        percent = env_dim()
+        log(f"{CONFIG}: [screen] dim = {value.strip()} is not 1-100 or off; "
+            f"using {describe_dim(percent)}")
+        return percent
+
+
 class Keyboard:
-    def __init__(self, system_bus, name):
+    def __init__(self, system_bus, name, level):
         self.system_bus = system_bus
         self.name = name
         self.path = os.path.join(LEDS, name, "brightness")
-        self.level = read_config()
+        self.level = level
         # The level before the light went off for idle, or None when it is
         # not off for idle.
         self.saved = None
@@ -156,10 +216,6 @@ class Keyboard:
             set_brightness(self.system_bus, value, "leds", self.name)
         except GLib.Error as e:
             log(f"keyboard: SetBrightness({value}) failed: {e.message}")
-
-    def reload(self):
-        self.level = read_config()
-        log(f"reloaded {CONFIG}: keyboard level {self.level}")
 
     def kept(self):
         try:
@@ -240,10 +296,11 @@ def on_status(bus, sender, path, iface, sig, params, data):
 def dim_screen(system_bus, status):
     global saved, dimmed_to
     if status == STATUS_IDLE:
-        if saved is not None:
+        if saved is not None or dim_percent is None:
             return
         saved = read("actual_brightness")
-        target = max(0, read("max_brightness") * DIM_PERCENT // 100)
+        # 0 turns the panel's light off; blanking is the screensaver's job.
+        target = max(1, read("max_brightness") * dim_percent // 100)
         if target >= saved:
             # Already dimmer than we would make it. Leave it alone.
             saved = None
@@ -295,6 +352,7 @@ def watch_login(session_bus, keyboard):
 
 
 def main():
+    global dim_percent
     if not os.path.isdir(SYS):
         sys.exit(f"no backlight device at {SYS}")
 
@@ -305,8 +363,9 @@ def main():
     # setup fails at start rather than silently doing nothing hours later.
     set_brightness(system_bus, read("actual_brightness"))
 
+    level, dim_percent = read_config()
     name = find_keyboard()
-    keyboard = Keyboard(system_bus, name) if name else None
+    keyboard = Keyboard(system_bus, name, level) if name else None
 
     loop = GLib.MainLoop()
 
@@ -317,8 +376,12 @@ def main():
         return GLib.SOURCE_REMOVE
 
     def reload():
+        global dim_percent
+        level, dim_percent = read_config()
         if keyboard:
-            keyboard.reload()
+            keyboard.level = level
+        log(f"reloaded {CONFIG}: keyboard level {level}, "
+            f"screen dim {describe_dim(dim_percent)}")
         return GLib.SOURCE_CONTINUE
 
     GLib.unix_signal_add(GLib.PRIORITY_DEFAULT, signal.SIGTERM, stop)
@@ -335,7 +398,10 @@ def main():
         log(f"keyboard {name}: level at login {keyboard.level}, off when idle")
     else:
         log("no keyboard LED; screen only")
-    log(f"watching for idle; {DEVICE} dims to {DIM_PERCENT}% of maximum")
+    if dim_percent is None:
+        log(f"watching for idle; {DEVICE} dimming off")
+    else:
+        log(f"watching for idle; {DEVICE} dims to {dim_percent}% of maximum")
     loop.run()
 
 
