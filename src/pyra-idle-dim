@@ -43,7 +43,8 @@
 # $XDG_STATE_HOME/pyra-backlight/kbd-level. With nothing kept yet it is 5%.
 # Only a keyboard light that is an LED (*::kbd_backlight) is handled; without
 # one this does the screen only. The file is reread on SIGHUP
-# (systemctl --user reload pyra-idle-dim). The session restarts this at each
+# (systemctl --user reload pyra-idle-dim); a new fixed level is set at once.
+# The session restarts this at each
 # login (/etc/xdg/autostart/pyra-idle-dim.desktop).
 #
 # Copyright (C) 2026 the pyra-backlight authors
@@ -277,6 +278,23 @@ class Keyboard:
             self.set(self.saved)
         self.saved = None
 
+    def reload(self, level):
+        """Takes a new level from the config file. A new fixed level is set
+        now, so a save in the settings app shows at once; "last" is the
+        light's current level already, and an unchanged level leaves alone a
+        light changed with the Fn keys since."""
+        changed = level != self.level
+        self.level = level
+        if not changed or level == "last" or not self.logged_in:
+            # Before the login level is set, login() will set it.
+            return
+        if self.saved is not None:
+            log(f"reload: keyboard off for idle; {level} at wake")
+            self.saved = level
+            return
+        log(f"reload: keyboard {self.read()} -> {level}")
+        self.set(level)
+
     def stop(self):
         if self.logged_in:
             self.keep(self.saved if self.saved is not None else self.read())
@@ -379,7 +397,7 @@ def main():
         global dim_percent
         level, dim_percent = read_config()
         if keyboard:
-            keyboard.level = level
+            keyboard.reload(level)
         log(f"reloaded {CONFIG}: keyboard level {level}, "
             f"screen dim {describe_dim(dim_percent)}")
         return GLib.SOURCE_CONTINUE

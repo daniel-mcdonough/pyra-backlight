@@ -96,11 +96,13 @@ goes below the lowest step that still lights the panel. Without the key, the
 `PYRA_DIM_PERCENT` environment variable is used if set (how 0.3 and earlier
 were configured), then 20.
 
-After editing the file run `systemctl --user reload pyra-idle-dim`. The
+After editing the file run `systemctl --user reload pyra-idle-dim`; a
+keyboard level changed to a number is set at once. The
 keyboard part needs the light to be an LED (`*::kbd_backlight`); on a kernel
 without one, only the screen is handled.
 
-At the login screen (lightdm) the keyboard light is set to 20%, before
+At the login screen (lightdm) the keyboard light is set to 20% (the
+`kbd-brightness-on-ac` value in the schema override), before
 each greeter at boot and after every logout, so the password is not typed in
 the dark. No user is known there, so this level is not in the per-user file.
 To turn it off, put this in a file under `/etc/lightdm/lightdm.conf.d/`:

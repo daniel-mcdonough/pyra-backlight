@@ -2,9 +2,9 @@
 #
 # mate-power-manager 1.26 sets the keyboard light to kbd-brightness-on-ac
 # (default 100) when it starts on AC, stepping up one level at a time, and
-# again after each resume on AC. 20 is the level pyra-greeter-kbd-light
-# leaves at the login screen (keep the two equal), so MATE's set at login
-# changes nothing and pyra-idle-dim goes straight to the user's own level.
+# again after each resume on AC. pyra-greeter-kbd-light reads this value
+# and sets the login screen's light to it, so MATE's set at login changes
+# nothing and pyra-idle-dim goes straight to the user's own level.
 # This sets only the default: a value set with gsettings still wins.
 
 [org.mate.power-manager]

@@ -1,3 +1,14 @@
+pyra-backlight (0.7) trixie; urgency=medium
+
+  * pyra-idle-dim: on reload, a keyboard level changed to a number is set
+    at once (or at wake, if the light is off for idle). Until now a level
+    saved in the settings app took effect only at the next login.
+  * pyra-greeter-kbd-light: reads its level from kbd-brightness-on-ac in
+    60_pyra-backlight.gschema.override (20 if unreadable), so the two can
+    no longer disagree.
+
+ -- pyra-backlight maintainers <pyra-backlight@example.invalid>  Mon, 16 Nov 2026 22:00:00 +0000
+
 pyra-backlight (0.6) trixie; urgency=medium
 
   * Schema override setting org.mate.power-manager kbd-brightness-on-ac to
