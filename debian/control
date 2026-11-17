@@ -30,3 +30,5 @@ Description: screen and keyboard backlight control for the DragonBox Pyra
     screen and one for the keyboard, usable with the arrow keys
   * pyra-idle-dim, a user service that dims the screen when the session
     goes idle and brings it back on wake
+  * pyra-greeter-kbd-light, which turns the keyboard light on at the
+    lightdm login screen

@@ -3,6 +3,9 @@ Description=Dim the screen and turn the keyboard light off when the session goes
 Documentation=file:/usr/bin/pyra-idle-dim
 PartOf=graphical-session.target
 After=graphical-session.target
+# Not in the login screen's session: as the lightdm user it would apply
+# lightdm's own recorded level 30 s into the greeter, often 0.
+ConditionUser=!@system
 
 [Service]
 Type=simple

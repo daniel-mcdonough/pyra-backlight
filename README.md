@@ -100,6 +100,14 @@ After editing the file run `systemctl --user reload pyra-idle-dim`. The
 keyboard part needs the light to be an LED (`*::kbd_backlight`); on a kernel
 without one, only the screen is handled.
 
+At the login screen (lightdm) the keyboard light is set to 20%, before
+each greeter at boot and after every logout, so the password is not typed in
+the dark. No user is known there, so this level is not in the per-user file.
+To turn it off, put this in a file under `/etc/lightdm/lightdm.conf.d/`:
+
+    [Seat:*]
+    greeter-setup-script=
+
 The idle delay is MATE's session setting, not something in this package. Set
 it in *Control Center → Screensaver*, or:
 

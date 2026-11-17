@@ -1,3 +1,15 @@
+pyra-backlight (0.5) trixie; urgency=medium
+
+  * pyra-greeter-kbd-light: lightdm greeter-setup-script that sets the
+    keyboard light to 20% before each login screen, at boot and after every
+    logout. Until now the login screen kept whatever level the session had
+    at logout, which could be off.
+  * pyra-idle-dim.service: ConditionUser=!@system, so it no longer runs in
+    the greeter's session as the lightdm user, where it set the keyboard
+    light to lightdm's own recorded level (often 0) 30 s into the greeter.
+
+ -- pyra-backlight maintainers <pyra-backlight@example.invalid>  Mon, 16 Nov 2026 18:00:00 +0000
+
 pyra-backlight (0.4) trixie; urgency=medium
 
   * pyra-idle-dim: read the screen dim depth from
