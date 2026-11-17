@@ -8,7 +8,8 @@
 #
 # lightdm does not start the greeter if this fails, so it always exits 0.
 
-LEVEL=20	# percent of max_brightness
+LEVEL=20	# percent of max_brightness; kbd-brightness-on-ac in
+		# 60_pyra-backlight.gschema.override must match
 
 for led in /sys/class/leds/*::kbd_backlight; do
 	[ -w "$led/brightness" ] || continue

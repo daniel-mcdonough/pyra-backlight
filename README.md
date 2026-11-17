@@ -108,6 +108,12 @@ To turn it off, put this in a file under `/etc/lightdm/lightdm.conf.d/`:
     [Seat:*]
     greeter-setup-script=
 
+At login on AC, MATE's power manager sets the keyboard light to its
+`kbd-brightness-on-ac` setting before pyra-idle-dim sets your level. Its
+default is 100, which made the light jump to full for about a second. The
+package sets the default to 20, the login screen's level, so the light goes
+straight from the login screen to your level.
+
 The idle delay is MATE's session setting, not something in this package. Set
 it in *Control Center → Screensaver*, or:
 

@@ -6,3 +6,4 @@ data/pyra-idle-dim.service usr/lib/systemd/user
 data/pyra-idle-dim.desktop etc/xdg/autostart
 src/pyra-greeter-kbd-light usr/libexec
 data/60-pyra-backlight.conf usr/share/lightdm/lightdm.conf.d
+data/60_pyra-backlight.gschema.override usr/share/glib-2.0/schemas

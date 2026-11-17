@@ -1,3 +1,13 @@
+pyra-backlight (0.6) trixie; urgency=medium
+
+  * Schema override setting org.mate.power-manager kbd-brightness-on-ac to
+    20, the login screen's level. mate-power-manager sets the keyboard light
+    to that key when it starts on AC; at its default of 100 the light jumped
+    to full for about a second at each login before pyra-idle-dim set the
+    user's level.
+
+ -- pyra-backlight maintainers <pyra-backlight@example.invalid>  Mon, 16 Nov 2026 20:00:00 +0000
+
 pyra-backlight (0.5) trixie; urgency=medium
 
   * pyra-greeter-kbd-light: lightdm greeter-setup-script that sets the
