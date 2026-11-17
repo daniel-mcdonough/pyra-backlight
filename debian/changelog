@@ -1,3 +1,14 @@
+pyra-backlight (0.8) trixie; urgency=medium
+
+  * pyra-idle-dim: while mate-screensaver's unlock dialog is up, the
+    keyboard light and the screen are back at their levels, so the
+    password is not typed in the dark. They go down again if the dialog
+    closes without an unlock. The screensaver sends no signal for the
+    dialog, so this checks for its child process every 0.5 s while the
+    screensaver is active.
+
+ -- pyra-backlight maintainers <pyra-backlight@example.invalid>  Mon, 16 Nov 2026 23:30:00 +0000
+
 pyra-backlight (0.7) trixie; urgency=medium
 
   * pyra-idle-dim: on reload, a keyboard level changed to a number is set

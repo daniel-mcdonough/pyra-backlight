@@ -101,6 +101,14 @@ keyboard level changed to a number is set at once. The
 keyboard part needs the light to be an LED (`*::kbd_backlight`); on a kernel
 without one, only the screen is handled.
 
+The session stays idle while the screensaver's password dialog is up (after
+the lock has engaged), so `pyra-idle-dim` brings the keyboard light and the
+screen back while the dialog is open, so the password is not typed in the
+dark. If the dialog closes without an unlock (Esc, or a minute without
+typing), they go off and dim again. MATE's screensaver announces nothing when
+the dialog opens, so while the screensaver is active this checks twice a
+second for its `mate-screensaver-dialog` child process.
+
 At the login screen (lightdm) the keyboard light is set to 20% (the
 `kbd-brightness-on-ac` value in the schema override), before
 each greeter at boot and after every logout, so the password is not typed in

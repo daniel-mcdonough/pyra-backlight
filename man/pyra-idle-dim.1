@@ -1,4 +1,4 @@
-.TH PYRA-IDLE-DIM 1 "November 2026" "pyra-backlight 0.4" "User Commands"
+.TH PYRA-IDLE-DIM 1 "November 2026" "pyra-backlight 0.8" "User Commands"
 .SH NAME
 pyra-idle-dim \- dim the Pyra's screen and keyboard light when the desktop session goes idle
 .SH SYNOPSIS
@@ -16,6 +16,15 @@ goes off when the session goes idle and comes back on when it wakes, unless
 it was changed in the meantime. At start, once mate-power-manager is on the
 session bus (it sets the light to 100% at login on AC), the light is set to
 the level at login from the configuration file.
+.PP
+While the screensaver is active, it checks every half second for the
+screensaver's unlock dialog
+.RB ( mate-screensaver-dialog ,
+a child of
+.BR mate-screensaver ).
+While the dialog is up, the keyboard light and the screen are put back as
+on a wake, since the session is still idle then; if it closes without an
+unlock, they go down again after 2 s.
 .PP
 It sets the brightness through logind, so it runs as the logged-in user
 and needs no root. It is normally started by the

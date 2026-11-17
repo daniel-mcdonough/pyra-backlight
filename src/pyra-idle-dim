@@ -47,6 +47,15 @@
 # The session restarts this at each
 # login (/etc/xdg/autostart/pyra-idle-dim.desktop).
 #
+# THE UNLOCK DIALOG
+#
+# The session stays idle while mate-screensaver's password dialog is up, so
+# without help the password is typed in the dark. mate-screensaver says
+# nothing on D-Bus when the dialog opens, but the dialog is its own child
+# process, mate-screensaver-dialog. So while the screensaver is active this
+# looks for that child every half second, puts light and screen back while
+# it is there, and turns them down again if it goes without an unlock.
+#
 # Copyright (C) 2026 the pyra-backlight authors
 # SPDX-License-Identifier: GPL-2.0-or-later
 #
@@ -82,8 +91,17 @@ KBD_FIRST_LEVEL = 5
 POWER_MANAGER = "org.mate.PowerManager"
 # How long to wait for it before putting the level back anyway.
 POWER_MANAGER_TIMEOUT = 30
+# mate-screensaver's bus name and its unlock dialog, a child process.
+SCREENSAVER = "org.mate.ScreenSaver"
+DIALOG = b"mate-screensaver-dialog"
+DIALOG_POLL_MS = 500
+# How long the dialog must be gone before light and screen go down again.
+# At an unlock the dialog exits just before ActiveChanged false is sent.
+DIALOG_GONE_MS = 2000
 
 saved = None
+# The session's last Presence status.
+status_now = None
 # Percent of maximum to drop to when idle, or None for no screen dimming.
 dim_percent = DIM_DEFAULT
 # What we dimmed to, so that waking can tell whether anyone changed the
@@ -301,8 +319,13 @@ class Keyboard:
 
 
 def on_status(bus, sender, path, iface, sig, params, data):
+    global status_now
     system_bus, keyboard = data
-    status = params[0]
+    status_now = params[0]
+    apply_status(system_bus, keyboard, status_now)
+
+
+def apply_status(system_bus, keyboard, status):
     if keyboard:
         if status == STATUS_IDLE:
             keyboard.idle()
@@ -339,6 +362,81 @@ def dim_screen(system_bus, status):
             set_brightness(system_bus, saved)
         saved = None
         dimmed_to = None
+
+
+class Lock:
+    """Light and screen up while mate-screensaver's unlock dialog is."""
+
+    def __init__(self, session_bus, system_bus, keyboard):
+        self.session_bus = session_bus
+        self.system_bus = system_bus
+        self.keyboard = keyboard
+        self.pid = None
+        self.timer = None
+        # Whether light and screen are up for the dialog.
+        self.up = False
+        # How long the dialog has been gone since it was up, in ms.
+        self.gone = 0
+
+    def on_active(self, bus, sender, path, iface, sig, params, data):
+        if params[0]:
+            if self.timer is None:
+                self.pid = self.owner_pid(sender)
+                if self.pid:
+                    self.timer = GLib.timeout_add(DIALOG_POLL_MS, self.poll)
+        elif self.timer is not None:
+            GLib.source_remove(self.timer)
+            self.timer = None
+            self.up = False
+            self.gone = 0
+
+    def owner_pid(self, sender):
+        try:
+            return self.session_bus.call_sync(
+                "org.freedesktop.DBus", "/org/freedesktop/DBus",
+                "org.freedesktop.DBus", "GetConnectionUnixProcessID",
+                GLib.Variant("(s)", (sender,)), GLib.VariantType("(u)"),
+                Gio.DBusCallFlags.NONE, 5000, None)[0]
+        except GLib.Error as e:
+            log(f"lock: no pid for {SCREENSAVER}: {e.message}")
+            return None
+
+    def dialog(self):
+        """Whether mate-screensaver has its unlock dialog running."""
+        children = []
+        task = f"/proc/{self.pid}/task"
+        try:
+            for tid in os.listdir(task):
+                with open(os.path.join(task, tid, "children")) as f:
+                    children += f.read().split()
+        except OSError:
+            return False
+        for child in children:
+            try:
+                with open(f"/proc/{child}/cmdline", "rb") as f:
+                    argv0 = f.read().split(b"\0")[0]
+            except OSError:
+                continue
+            if os.path.basename(argv0) == DIALOG:
+                return True
+        return False
+
+    def poll(self):
+        if self.dialog():
+            self.gone = 0
+            if not self.up:
+                self.up = True
+                log("lock: unlock dialog up")
+                apply_status(self.system_bus, self.keyboard, 0)
+        elif self.up:
+            self.gone += DIALOG_POLL_MS
+            if self.gone >= DIALOG_GONE_MS:
+                self.up = False
+                self.gone = 0
+                log("lock: unlock dialog gone, still locked")
+                if status_now == STATUS_IDLE:
+                    apply_status(self.system_bus, self.keyboard, STATUS_IDLE)
+        return GLib.SOURCE_CONTINUE
 
 
 def watch_login(session_bus, keyboard):
@@ -410,6 +508,11 @@ def main():
         None, "org.gnome.SessionManager.Presence", "StatusChanged",
         "/org/gnome/SessionManager/Presence", None,
         Gio.DBusSignalFlags.NONE, on_status, (system_bus, keyboard),
+    )
+    lock = Lock(session_bus, system_bus, keyboard)
+    session_bus.signal_subscribe(
+        None, SCREENSAVER, "ActiveChanged", "/org/mate/ScreenSaver", None,
+        Gio.DBusSignalFlags.NONE, lock.on_active, None,
     )
     if keyboard:
         watch_login(session_bus, keyboard)
